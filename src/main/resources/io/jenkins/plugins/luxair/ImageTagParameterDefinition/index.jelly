@@ -27,7 +27,7 @@
                 <option value="" disabled="true"></option>
             </select>
             <script src="${rootURL}/plugin/image-tag-parameter/filter.js"/>
-            <input type="text" placeholder="Filter" id="imageTagFilter" onkeyup="filter(this)"></input>
+            <input type="text" placeholder="Filter" id="imageTagFilter"></input>
         </div>
         <div name="errorMsg" display="${it.errorMsg == '' ? 'none' : ''}" style="color: red">
             ${it.errorMsg}

@@ -1,4 +1,8 @@
-function filter(self){
+document.addEventListener("DOMContentLoaded", function() { 
+    document.querySelector("input[id='imageTagFilter']").setAttribute("onkeyup", "filterImageTag(this)");
+});
+
+function filterImageTag(self){
 
     var imageTags = self.parentNode.querySelector("select[name='imageTag']");
         
