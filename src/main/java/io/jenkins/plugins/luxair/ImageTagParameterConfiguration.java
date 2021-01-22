@@ -45,6 +45,10 @@ public class ImageTagParameterConfiguration extends GlobalConfiguration {
     public Ordering getDefaultTagOrdering() {
         return defaultTagOrdering != null ? defaultTagOrdering : Ordering.NATURAL;
     }
+    
+    public Boolean getDefaultEnableDate() {
+        return true;
+    }
 
     @Override
     public boolean configure(StaplerRequest req, JSONObject json) {

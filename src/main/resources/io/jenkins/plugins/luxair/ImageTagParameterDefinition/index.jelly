@@ -12,13 +12,22 @@
             <select name="imageTag" style="min-width:18rem;">
                 <j:forEach var="aTag" items="${it.tags}" varStatus="loop">
                     <j:choose>
-                        <f:option value="${aTag}" selected="${aTag.equals(it.defaultTag)}">
-                            ${it.image}:${aTag}
-                        </f:option>
+                        <j:if test="${it.enableDate}">
+                            <f:option value="${aTag}" selected="${aTag.equals(it.defaultTag)}">
+                                ${it.tagDates[aTag]} | ${it.image}:${aTag}
+                            </f:option>
+                        </j:if>
+                        <j:if test="${!it.enableDate}">
+                            <f:option value="${aTag}" selected="${aTag.equals(it.defaultTag)}">
+                                ${it.image}:${aTag}
+                            </f:option>
+                        </j:if>
                     </j:choose>
                 </j:forEach>
+                <option value="" disabled="true"></option>
             </select>
-
+            <script src="${rootURL}/plugin/image-tag-parameter/filter.js"/>
+            <input type="text" placeholder="Filter" id="imageTagFilter" onkeyup="filter(this)"></input>
         </div>
         <div name="errorMsg" display="${it.errorMsg == '' ? 'none' : ''}" style="color: red">
             ${it.errorMsg}

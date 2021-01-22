@@ -22,8 +22,11 @@ import org.kohsuke.stapler.*;
 import javax.annotation.Nonnull;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Logger;
+import java.util.Date;
+import kong.unirest.JsonNode;
 
 
 public class ImageTagParameterDefinition extends SimpleParameterDefinition {
@@ -37,24 +40,38 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
     private final String filter;
     private final String credentialId;
     private String defaultTag;
+    private final Boolean enableDate;
     private Ordering tagOrder;
     private String errorMsg = "";
+//    private transient kong.unirest.HttpResponse<JsonNode> imageTagJSON;
+    private Map<String, String> tagDatesString;
 
     @DataBoundConstructor
     @SuppressWarnings("unused")
     public ImageTagParameterDefinition(String name, String description, String image, String filter,
+                                       String registry, String credentialId, Boolean enableDate) {
+        this(name, description, image, filter, "", registry, credentialId, enableDate, config.getDefaultTagOrdering());
+    }
+    
+    public ImageTagParameterDefinition(String name, String description, String image, String filter,
+                                       String registry, String credentialId, Ordering tagOrder) {
+        this(name, description, image, filter, "", registry, credentialId, config.getDefaultEnableDate(), tagOrder);
+    }
+    
+    public ImageTagParameterDefinition(String name, String description, String image, String filter,
                                        String registry, String credentialId) {
-        this(name, description, image, filter, "", registry, credentialId, config.getDefaultTagOrdering());
+        this(name, description, image, filter, "", registry, credentialId, config.getDefaultEnableDate(), config.getDefaultTagOrdering());
     }
 
     public ImageTagParameterDefinition(String name, String description, String image, String filter, String defaultTag,
-                                       String registry, String credentialId, Ordering tagOrder) {
+                                       String registry, String credentialId, Boolean enableDate, Ordering tagOrder) {
         super(name, description);
         this.image = image;
         this.registry = StringUtil.isNotNullOrEmpty(registry) ? registry : config.getDefaultRegistry();
         this.filter = StringUtil.isNotNullOrEmpty(filter) ? filter : ".*";
         this.defaultTag = StringUtil.isNotNullOrEmpty(defaultTag) ? defaultTag : "";
         this.credentialId = getDefaultOrEmptyCredentialId(this.registry, credentialId);
+        this.enableDate = enableDate;
         this.tagOrder = tagOrder != null ? tagOrder : config.getDefaultTagOrdering();
     }
 
@@ -83,7 +100,11 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
     public String getCredentialId() {
         return credentialId;
     }
-
+    
+    public Boolean getEnableDate() {
+        return enableDate;
+    }
+    
     public Ordering getTagOrder() {
         return tagOrder;
     }
@@ -113,6 +134,7 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
     }
 
     public List<String> getTags() {
+        
         String user = "";
         String password = "";
 
@@ -121,8 +143,12 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
             user = credential.getUsername();
             password = credential.getPassword().getPlainText();
         }
-
-        ResultContainer<List<String>> resultContainer = ImageTag.getTags(image, registry, filter, user, password, tagOrder);
+        kong.unirest.HttpResponse<JsonNode> imageTagJSON = ImageTag.getImageTagJSON(image, registry, user, password);
+        Map<String, Date> tagDates = ImageTag.getTagDates(imageTagJSON);
+        ResultContainer<List<String>> resultContainer = ImageTag.getTags(imageTagJSON, tagDates, filter, tagOrder);
+        
+        tagDatesString = ImageTag.getTagDatesString(tagDates);
+        
         Optional<String> optionalErrorMsg = resultContainer.getErrorMsg();
         if (optionalErrorMsg.isPresent()) {
             setErrorMsg(optionalErrorMsg.get());
@@ -131,6 +157,11 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
         }
 
         return resultContainer.getValue();
+    }
+    
+    public Map<String, String> getTagDates() {
+
+        return tagDatesString;
     }
 
     private StandardUsernamePasswordCredentials findCredential(String credentialId) {
@@ -161,7 +192,7 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
             ImageTagParameterValue value = (ImageTagParameterValue) defaultValue;
             return new ImageTagParameterDefinition(getName(), getDescription(),
                 getImage(), getFilter(), value.getImageTag(),
-                getRegistry(), getCredentialId(), getTagOrder());
+                getRegistry(), getCredentialId(), getEnableDate(), getTagOrder());
         }
         return this;
     }
@@ -199,6 +230,11 @@ public class ImageTagParameterDefinition extends SimpleParameterDefinition {
         @SuppressWarnings("unused")
         public Ordering getDefaultTagOrdering() {
             return config.getDefaultTagOrdering();
+        }
+        
+        @SuppressWarnings("unused")
+        public Boolean getDefaultEnableDate() {
+            return config.getDefaultEnableDate();
         }
 
         @SuppressWarnings("unused")

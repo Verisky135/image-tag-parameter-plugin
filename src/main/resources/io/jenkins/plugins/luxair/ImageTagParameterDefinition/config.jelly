@@ -31,6 +31,10 @@
             <c:select default="${descriptor.getDefaultCredentialID()}" />
         </f:entry>
 
+        <f:entry title="${%Enable date}" field="enableDate">
+            <f:checkbox name="enableDate" default="${descriptor.getDefaultEnableDate()}">${%Enable date}</f:checkbox>
+        </f:entry>
+
         <f:entry title="${%Tag Ordering}" field="tagOrder">
             <f:enum default="${descriptor.getDefaultTagOrdering().name()}">${it}</f:enum>
         </f:entry>

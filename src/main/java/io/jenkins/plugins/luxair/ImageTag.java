@@ -7,14 +7,24 @@ import kong.unirest.*;
 import kong.unirest.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.TimeZone;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import kong.unirest.json.JSONArray;
 
 
 public class ImageTag {
@@ -26,26 +36,24 @@ public class ImageTag {
         throw new IllegalStateException("Utility class");
     }
 
-    public static ResultContainer<List<String>> getTags(String image, String registry, String filter,
-                                                        String user, String password, Ordering ordering) {
+    public static ResultContainer<List<String>> getTags(HttpResponse<JsonNode> response, Map<String, Date> tagDates, String filter, Ordering ordering) {
         ResultContainer<List<String>> container = new ResultContainer<>(Collections.emptyList());
 
-        String[] authService = getAuthService(registry);
-        String token = getAuthToken(authService, image, user, password);
-        ResultContainer<List<VersionNumber>> tags = getImageTagsFromRegistry(image, registry, authService[0], token);
+        
+        ResultContainer<List<VersionNumber>> tags = getImageTag(response);
 
         if (tags.getErrorMsg().isPresent()) {
             container.setErrorMsg(tags.getErrorMsg().get());
             return container;
         }
 
-        ResultContainer<List<String>> filterTags = filterTags(tags.getValue(), filter, ordering);
+        ResultContainer<List<String>> filterTags = filterTags(tags.getValue(), tagDates, filter, ordering);
         filterTags.getErrorMsg().ifPresent(container::setErrorMsg);
         container.setValue(filterTags.getValue());
         return container;
     }
 
-    private static ResultContainer<List<String>> filterTags(List<VersionNumber> tags, String filter, Ordering ordering) {
+    private static ResultContainer<List<String>> filterTags(List<VersionNumber> tags, Map<String, Date> tagDates, String filter, Ordering ordering) {
         ResultContainer<List<String>> container = new ResultContainer<>(Collections.emptyList());
         logger.info("Ordering Tags according to: " + ordering);
 
@@ -55,11 +63,20 @@ public class ImageTag {
                 .filter(tag -> tag.matches(filter))
                 .sorted(ordering == Ordering.NATURAL ? Collections.reverseOrder() : String::compareTo)
                 .collect(Collectors.toList()));
+        } else if (ordering == Ordering.ASC_VERSION || ordering == Ordering.DSC_VERSION) {
+            container.setValue(tags.stream()
+                .filter(tag -> tag.toString().matches(filter))
+                .sorted(ordering == Ordering.ASC_VERSION ? VersionNumber::compareTo : VersionNumber.DESCENDING)
+                .map(VersionNumber::toString)
+                .collect(Collectors.toList()));
         } else {
             try {
+                
+                Comparator<VersionNumber> ascTimestampComparator = Comparator.comparing(item -> tagDates.get(item.toString()));
+                
                 container.setValue(tags.stream()
                     .filter(tag -> tag.toString().matches(filter))
-                    .sorted(ordering == Ordering.ASC_VERSION ? VersionNumber::compareTo : VersionNumber.DESCENDING)
+                    .sorted(ordering == Ordering.ASC_TIMESTAMP ? ascTimestampComparator : ascTimestampComparator.reversed())
                     .map(VersionNumber::toString)
                     .collect(Collectors.toList()));
             } catch (Exception ignore) {
@@ -165,28 +182,75 @@ public class ImageTag {
 
         return token;
     }
-
-    private static ResultContainer<List<VersionNumber>> getImageTagsFromRegistry(String image, String registry,
-                                                                                 String authType, String token) {
-        ResultContainer<List<VersionNumber>> resultContainer = new ResultContainer<>(new ArrayList<>());
+    
+    public static HttpResponse<JsonNode> getImageTagJSON(
+            String image, String registry, String user, String password ) {
+        
+        String[] authService = getAuthService(registry);
+        String token = getAuthToken(authService, image, user, password);
+        
         String url = registry + "/v2/" + image + "/tags/list";
 
         Unirest.config().reset();
         Unirest.config().enableCookieManagement(false).interceptor(errorInterceptor);
         HttpResponse<JsonNode> response = Unirest.get(url)
-            .header("Authorization", authType + " " + token)
+            .header("Authorization", authService[0] + " " + token)
             .asJson();
+        
+        Unirest.shutDown();
+
+        return response;
+        
+    }
+    
+    private static ResultContainer<List<VersionNumber>> getImageTag(HttpResponse<JsonNode> response) {
+        ResultContainer<List<VersionNumber>> resultContainer = new ResultContainer<>(new ArrayList<>());
+        
         if (response.isSuccess()) {
             logger.info("HTTP status: " + response.getStatusText());
             response.getBody().getObject()
-                .getJSONArray("tags")
-                .forEach(item -> resultContainer.getValue().add(new VersionNumber(item.toString())));
-        } else {
+                    .getJSONArray("tags")
+                    .forEach(item -> resultContainer.getValue().add(new VersionNumber(item.toString())));
+        }
+        else {
             logger.warning("HTTP status: " + response.getStatusText());
             resultContainer.setErrorMsg("HTTP status: " + response.getStatusText());
         }
-        Unirest.shutDown();
-
         return resultContainer;
+    }
+    
+    public static Map<String, Date> getTagDates(HttpResponse<JsonNode> response) {
+        Map<String, Date> tagAndDate = new HashMap<>();
+        
+        JSONObject manifest = response.getBody().getObject().getJSONObject("manifest");
+        Iterator i = manifest.keys();
+        
+        while (i.hasNext()) {
+            String key = (String) i.next();
+            JSONObject tagObject = manifest.getJSONObject(key);
+            String epoch = tagObject.getString("timeUploadedMs");
+            
+            JSONArray tagList = tagObject.getJSONArray("tag");
+            if (!tagList.isEmpty()) {
+                Date date = new Date(Long.parseLong(epoch));
+                tagAndDate.put(tagList.getString(0), date);
+            }
+        }
+        
+        return tagAndDate;
+    }
+    
+    public static Map<String, String> getTagDatesString(Map<String, Date> tagAndDate) {
+        Map<String, String> tagAndDateString = new HashMap<>();
+                
+        for(Entry<String, Date> key : tagAndDate.entrySet()) {
+            Date date = key.getValue();
+            DateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+            format.setTimeZone(TimeZone.getTimeZone("Asia/Jakarta"));
+            String formatted = format.format(date);
+            tagAndDateString.put(key.getKey(), formatted);
+        }
+        
+        return tagAndDateString;
     }
 }
